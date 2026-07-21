@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+  <title>4K Rhythm Game Prototype</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none; /* Prevents mobile scrolling & double-tap zoom */
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      background-color: #111;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #game-container {
+      position: relative;
+      width: 100%;
+      max-width: 480px; /* Constrains playable area width on desktop */
+      height: 100vh;
+      background-color: #181824;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* UI Overlay */
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(10, 10, 16, 0.85);
+      z-index: 10;
+    }
+
+    .menu-screen {
+      text-align: center;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .menu-screen.hidden {
+      display: none;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      letter-spacing: 3px;
+      color: #00e5ff;
+      text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+    }
+
+    .subtext {
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+
+    .stats-box {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 20px 40px;
+      border-radius: 8px;
+      font-size: 1.2rem;
+      text-align: left;
+      line-height: 1.8;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn {
+      padding: 12px 36px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #111;
+      background: #00e5ff;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.2s;
+      box-shadow: 0 4px 15px rgba(0, 229, 255, 0.4);
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+      background: #00b3cc;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- Main Render Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Overlay UI for Menus -->
+    <div id="ui-overlay" class="overlay">
+      <!-- Start Menu -->
+      <div id="start-screen" class="menu-screen">
+        <h1>4K RHYTHM</h1>
+        <p class="subtext">Desktop: D F J K | Mobile: Tap Lanes</p>
+        <button id="start-btn" class="btn">PLAY</button>
+      </div>
+
+      <!-- Results Screen -->
+      <div id="results-screen" class="menu-screen hidden">
+        <h1>STAGE CLEAR</h1>
+        <div class="stats-box">
+          <p>Score: <span id="res-score">0</span></p>
+          <p>Accuracy: <span id="res-accuracy">0.00%</span></p>
+          <p>Max Combo: <span id="res-combo">0</span></p>
+        </div>
+        <button id="restart-btn" class="btn">RESTART</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 4K Rhythm Game Engine Core
+     */
+
+    // ==========================================
+    // 1. HARDCODED BEATMAP (~40 Notes, 120 BPM)
+    // ==========================================
+    const BEATMAP = [
+      { time: 1000, lane: 0 }, { time: 1500, lane: 1 },
+      { time: 2000, lane: 2 }, { time: 2500, lane: 3 },
+      { time: 3000, lane: 1 }, { time: 3250, lane: 2 },
+      { time: 3500, lane: 0 }, { time: 4000, lane: 3 },
+      { time: 4500, lane: 2 }, { time: 4750, lane: 1 },
+      { time: 5000, lane: 0 }, { time: 5250, lane: 3 },
+      { time: 5500, lane: 1 }, { time: 5750, lane: 2 },
+      { time: 6000, lane: 0 }, { time: 6000, lane: 3 },
+      { time: 6500, lane: 1 }, { time: 6750, lane: 2 },
+      { time: 7000, lane: 0 }, { time: 7250, lane: 3 },
+      { time: 7500, lane: 1 }, { time: 7750, lane: 2 },
+      { time: 8000, lane: 0 }, { time: 8250, lane: 1 },
+      { time: 8500, lane: 2 }, { time: 8750, lane: 3 },
+      { time: 9000, lane: 0 }, { time: 9000, lane: 2 },
+      { time: 9500, lane: 1 }, { time: 9500, lane: 3 },
+      { time: 10000, lane: 0 }, { time: 10250, lane: 1 },
+      { time: 10500, lane: 2 }, { time: 10750, lane: 3 },
+      { time: 11000, lane: 1 }, { time: 11250, lane: 2 },
+      { time: 11500, lane: 0 }, { time: 11500, lane: 3 },
+      { time: 12000, lane: 1 }, { time: 12500, lane: 2 }
+    ];
+
+    // ==========================================
+    // 2. AUDIO SYNTHESIZER (No MP3 required)
+    // ==========================================
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+
+      // Play a simple synthesized tone for note clicks/music feedback
+      playTone(freq = 440, duration = 0.08, type = 'sine') {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+      }
+    }
+
+    // ==========================================
+    // 3. INPUT MANAGER (Keyboard & Touch)
+    // ==========================================
+    class InputHandler {
+      constructor(canvas, onPress, onRelease) {
+        this.canvas = canvas;
+        this.onPress = onPress;
+        this.onRelease = onRelease;
+        this.laneKeys = { 'd': 0, 'f': 1, 'j': 2, 'k': 3 };
+        this.activeTouches = new Map();
+
+        this.bindEvents();
+      }
+
+      bindEvents() {
+        // Keyboard inputs
+        window.addEventListener('keydown', (e) => {
+          const key = e.key.toLowerCase();
+          if (this.laneKeys.hasOwnProperty(key) && !e.repeat) {
+            this.onPress(this.laneKeys[key]);
+          }
+        });
+
+        window.addEventListener('keyup', (e) => {
+          const key = e.key.toLowerCase();
+          if (this.laneKeys.hasOwnProperty(key)) {
+            this.onRelease(this.laneKeys[key]);
+          }
+        });
+
+        // Touch inputs (Multi-touch support)
+        const handleTouch = (e) => {
+          e.preventDefault();
+          const rect = this.canvas.getBoundingClientRect();
+          const currentTouchLanes = new Set();
+
+          for (let i = 0; i < e.touches.length; i++) {
+            const touch = e.touches[i];
+            const touchX = touch.clientX - rect.left;
+            const laneWidth = rect.width / 4;
+            const lane = Math.min(Math.max(Math.floor(touchX / laneWidth), 0), 3);
+            
+            currentTouchLanes.add(lane);
+          }
+
+          // Check presses
+          for (let lane of currentTouchLanes) {
+            if (!this.activeTouches.has(lane)) {
+              this.activeTouches.set(lane, true);
+              this.onPress(lane);
+            }
+          }
+
+          // Check releases
+          for (let lane = 0; lane < 4; lane++) {
+            if (!currentTouchLanes.has(lane) && this.activeTouches.has(lane)) {
+              this.activeTouches.delete(lane);
+              this.onRelease(lane);
+            }
+          }
+        };
+
+        this.canvas.addEventListener('touchstart', handleTouch, { passive: false });
+        this.canvas.addEventListener('touchmove', handleTouch, { passive: false });
+        this.canvas.addEventListener('touchend', handleTouch, { passive: false });
+        this.canvas.addEventListener('touchcancel', handleTouch, { passive: false });
+      }
+    }
+
+    // ==========================================
+    // 4. GAME RENDERER
+    // ==========================================
+    class Renderer {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.laneColors = ['#ff2a6d', '#05d9e8', '#05d9e8', '#ff2a6d'];
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+      }
+
+      resize() {
+        this.width = this.canvas.parentElement.clientWidth;
+        this.height = this.canvas.parentElement.clientHeight;
+        
+        // High DPI rendering setup
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = this.width * dpr;
+        this.canvas.height = this.height * dpr;
+        this.ctx.scale(dpr, dpr);
+
+        this.laneWidth = this.width / 4;
+        this.judgmentY = this.height * 0.85;
+        this.noteHeight = 20;
+      }
+
+      clear() {
+        this.ctx.fillStyle = '#181824';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+      }
+
+      drawLanes(pressedLanes) {
+        for (let i = 0; i < 4; i++) {
+          const x = i * this.laneWidth;
+
+          // Lane dividers
+          this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+          this.ctx.lineWidth = 1;
+          this.ctx.strokeRect(x, 0, this.laneWidth, this.height);
+
+          // Pressed lane highlight
+          if (pressedLanes[i]) {
+            const gradient = this.ctx.createLinearGradient(0, this.judgmentY, 0, 0);
+            gradient.addColorStop(0, this.laneColors[i] + '66');
+            gradient.addColorStop(1, 'transparent');
+            this.ctx.fillStyle = gradient;
+            this.ctx.fillRect(x, 0, this.laneWidth, this.judgmentY);
+          }
+        }
+
+        // Judgment Line
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 4;
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, this.judgmentY);
+        this.ctx.lineTo(this.width, this.judgmentY);
+        this.ctx.stroke();
+      }
+
+      drawNotes(notes, currentTime, speed) {
+        for (let note of notes) {
+          if (note.hit || note.missed) continue;
+
+          const timeDiff = note.time - currentTime;
+          const y = this.judgmentY - (timeDiff * speed);
+
+          if (y > -50 && y < this.height + 50) {
+            const x = note.lane * this.laneWidth;
+            this.ctx.fillStyle = this.laneColors[note.lane];
+            
+            this.ctx.beginPath();
+            this.ctx.roundRect(x + 4, y - this.noteHeight / 2, this.laneWidth - 8, this.noteHeight, 4);
+            this.ctx.fill();
+          }
+        }
+      }
+
+      drawHUD(score, combo, accuracy, judgmentText, fps) {
+        this.ctx.textAlign = 'center';
+
+        // Judgment Text
+        if (judgmentText) {
+          this.ctx.font = 'bold 28px sans-serif';
+          this.ctx.fillStyle = judgmentText.color;
+          this.ctx.fillText(judgmentText.text, this.width / 2, this.height * 0.7);
+        }
+
+        // Combo
+        if (combo > 0) {
+          this.ctx.font = 'bold 36px sans-serif';
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.fillText(`${combo}x`, this.width / 2, this.height * 0.45);
+        }
+
+        // Top Header
+        this.ctx.font = '16px monospace';
+        this.ctx.fillStyle = '#aaa';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(`SCORE: ${Math.floor(score)}`, 15, 30);
+
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText(`ACC: ${accuracy.toFixed(2)}%`, this.width - 15, 30);
+
+        // FPS
+        this.ctx.font = '12px monospace';
+        this.ctx.fillStyle = '#555';
+        this.ctx.fillText(`FPS: ${fps}`, this.width - 15, 50);
+      }
+    }
+
+    // ==========================================
+    // 5. MAIN GAME LOGIC
+    // ==========================================
+    class Game {
+      constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.audio = new AudioEngine();
+        this.renderer = new Renderer(this.canvas);
+        this.input = new InputHandler(
+          this.canvas,
+          (lane) => this.handlePress(lane),
+          (lane) => this.handleRelease(lane)
+        );
+
+        this.scrollSpeed = 0.55;
+        this.pressedLanes = [false, false, false, false];
+
+        this.score = 0;
+        this.combo = 0;
+        this.maxCombo = 0;
+        this.totalNotesHit = 0;
+        this.weightedPoints = 0;
+        
+        this.currentJudgment = null;
+        this.judgmentTimer = null;
+
+        this.isRunning = false;
+        this.startTime = 0;
+        this.notes = [];
+
+        this.lastFrameTime = performance.now();
+        this.fps = 60;
+
+        this.bindUI();
+      }
+
+      bindUI() {
+        document.getElementById('start-btn').addEventListener('click', () => this.start());
+        document.getElementById('restart-btn').addEventListener('click', () => this.start());
+      }
+
+      start() {
+        // Essential for iOS/Chrome touch gesture unlock
+        this.audio.init();
+
+        this.notes = BEATMAP.map(n => ({ ...n, hit: false, missed: false }));
+
+        this.score = 0;
+        this.combo = 0;
+        this.maxCombo = 0;
+        this.totalNotesHit = 0;
+        this.weightedPoints = 0;
+        this.currentJudgment = null;
+
+        document.getElementById('ui-overlay').classList.add('hidden');
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('results-screen').classList.add('hidden');
+
+        this.isRunning = true;
+        this.startTime = performance.now();
+        
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      handlePress(lane) {
+        this.pressedLanes[lane] = true;
+        if (!this.isRunning) return;
+
+        const currentTime = performance.now() - this.startTime;
+        let closestNote = null;
+        let minDiff = Infinity;
+
+        for (let note of this.notes) {
+          if (note.lane === lane && !note.hit && !note.missed) {
+            const diff = Math.abs(note.time - currentTime);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestNote = note;
+            }
+          }
+        }
+
+        if (closestNote && minDiff <= 80) {
+          closestNote.hit = true;
+          this.totalNotesHit++;
+
+          if (minDiff <= 40) {
+            this.registerJudgment('PERFECT', '#00e5ff', 300, 1.0);
+            this.audio.playTone(523.25, 0.05);
+          } else {
+            this.registerJudgment('GOOD', '#00ff66', 100, 0.5);
+            this.audio.playTone(392.00, 0.05);
+          }
+        }
+      }
+
+      handleRelease(lane) {
+        this.pressedLanes[lane] = false;
+      }
+
+      registerJudgment(text, color, points, weight) {
+        this.score += points + (this.combo * 10);
+        this.combo++;
+        if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+
+        this.weightedPoints += weight;
+
+        this.currentJudgment = { text, color };
+        clearTimeout(this.judgmentTimer);
+        this.judgmentTimer = setTimeout(() => this.currentJudgment = null, 400);
+      }
+
+      registerMiss() {
+        this.combo = 0;
+        this.totalNotesHit++;
+        this.currentJudgment = { text: 'MISS', color: '#ff2a6d' };
+        clearTimeout(this.judgmentTimer);
+        this.judgmentTimer = setTimeout(() => this.currentJudgment = null, 400);
+        this.audio.playTone(130.81, 0.08, 'sawtooth');
+      }
+
+      loop(now) {
+        if (!this.isRunning) return;
+
+        const delta = now - this.lastFrameTime;
+        this.lastFrameTime = now;
+        this.fps = Math.round(1000 / delta);
+
+        const currentTime = now - this.startTime;
+
+        for (let note of this.notes) {
+          if (!note.hit && !note.missed && currentTime - note.time > 80) {
+            note.missed = true;
+            this.registerMiss();
+          }
+        }
+
+        this.renderer.clear();
+        this.renderer.drawLanes(this.pressedLanes);
+        this.renderer.drawNotes(this.notes, currentTime, this.scrollSpeed);
+
+        const accuracy = this.totalNotesHit > 0 
+          ? (this.weightedPoints / this.totalNotesHit) * 100 
+          : 100;
+
+        this.renderer.drawHUD(this.score, this.combo, accuracy, this.currentJudgment, this.fps);
+
+        const lastNoteTime = BEATMAP[BEATMAP.length - 1].time;
+        if (currentTime > lastNoteTime + 1500) {
+          this.endGame(accuracy);
+          return;
+        }
+
+        requestAnimationFrame((t) => this.loop(t));
+      }
+
+      endGame(finalAccuracy) {
+        this.isRunning = false;
+
+        document.getElementById('res-score').innerText = Math.floor(this.score);
+        document.getElementById('res-accuracy').innerText = `${finalAccuracy.toFixed(2)}%`;
+        document.getElementById('res-combo').innerText = this.maxCombo;
+
+        document.getElementById('ui-overlay').classList.remove('hidden');
+        document.getElementById('results-screen').classList.remove('hidden');
+      }
+    }
+
+    // Launch
+    window.addEventListener('load', () => {
+      new Game();
+    });
+  </script>
+</body>
+</html>
